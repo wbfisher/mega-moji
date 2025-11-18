@@ -163,6 +163,19 @@ mega-moji/
 - Your bot will be publicly accessible at the Railway URL
 - Railway will automatically redeploy when you push to your connected GitHub branch
 
+### Troubleshooting
+
+**Python version installation errors:**
+- If you encounter `mise ERROR failed to install core:python@3.11.x`, try:
+  1. Update `runtime.txt` to use a more recent patch version (e.g., `python-3.11.9`)
+  2. Alternatively, remove `runtime.txt` and let Railway auto-detect the Python version
+  3. Clear the build cache in Railway dashboard: Settings → Clear Build Cache → Redeploy
+
+**Bot not connecting:**
+- Ensure `DISCORD_BOT_TOKEN` is set correctly in Railway environment variables
+- Check Railway logs for connection errors
+- Verify the bot token hasn't been regenerated in Discord Developer Portal
+
 ### Monitoring
 
 - View logs in the Railway dashboard under your service
