@@ -171,10 +171,29 @@ mega-moji/
   2. Alternatively, remove `runtime.txt` and let Railway auto-detect the Python version
   3. Clear the build cache in Railway dashboard: Settings → Clear Build Cache → Redeploy
 
-**Bot not connecting:**
-- Ensure `DISCORD_BOT_TOKEN` is set correctly in Railway environment variables
-- Check Railway logs for connection errors
-- Verify the bot token hasn't been regenerated in Discord Developer Portal
+**Bot not connecting / Server not showing in dropdown:**
+1. **Check Railway logs** - Go to your Railway project → Deployments → View logs
+   - Look for messages like "✅ Bot has logged in to Discord!"
+   - Look for errors like "ERROR: Discord login failed - invalid token"
+   - Check if you see "Bot is in X server(s)" message
+
+2. **Verify environment variable** - In Railway dashboard:
+   - Go to your project → Variables tab
+   - Ensure `DISCORD_BOT_TOKEN` is set correctly (no extra spaces, correct token)
+   - The token should be a long string starting with something like `MTxxxxxxxxxx...`
+
+3. **Check bot status** - Visit: `https://your-railway-url.up.railway.app/api/status`
+   - This will show: `bot_exists`, `bot_ready`, `token_set`, `guild_count`
+   - If `token_set` is false, the token isn't configured
+   - If `bot_ready` is false, check Railway logs for connection errors
+
+4. **Verify bot is in server**:
+   - Double-check the bot is actually added to your Discord server
+   - The bot needs to be a member of the server to list it
+
+5. **Check Discord Developer Portal**:
+   - Verify the bot token hasn't been regenerated (if regenerated, update Railway)
+   - Make sure "Server Members Intent" is enabled in Bot → Privileged Gateway Intents
 
 ### Monitoring
 

@@ -5,6 +5,9 @@ Flask web application for Discord emoji downloader.
 import os
 import asyncio
 import threading
+import traceback
+import sys
+import discord
 from flask import Flask, render_template, request, jsonify, send_file
 from bot import DiscordBot
 from emoji_downloader import download_and_zip_emojis
@@ -46,14 +49,39 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/status', methods=['GET'])
+def get_status():
+    """Get bot connection status for debugging."""
+    try:
+        bot_instance = get_bot_instance()
+        token_set = bool(os.getenv('DISCORD_BOT_TOKEN'))
+        
+        status = {
+            'bot_exists': bot_instance is not None,
+            'bot_ready': bot_instance.is_ready() if bot_instance else False,
+            'token_set': token_set,
+            'guild_count': len(bot_instance.get_guilds()) if bot_instance and bot_instance.is_ready() else 0
+        }
+        
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
 @app.route('/api/guilds', methods=['GET'])
 def get_guilds():
     """Get list of all guilds the bot is in."""
     try:
         bot_instance = get_bot_instance()
         
-        if bot_instance is None or not bot_instance.is_ready():
-            return jsonify({'error': 'Bot is not ready yet. Please wait a moment.'}), 503
+        if bot_instance is None:
+            # Check if token is set
+            if not os.getenv('DISCORD_BOT_TOKEN'):
+                return jsonify({'error': 'Discord bot token not configured. Please set DISCORD_BOT_TOKEN in Railway.'}), 503
+            return jsonify({'error': 'Bot is not initialized yet. Please wait a moment and refresh.'}), 503
+        
+        if not bot_instance.is_ready():
+            return jsonify({'error': 'Bot is not ready yet. Please wait a moment and refresh.'}), 503
         
         guilds = bot_instance.get_guilds()
         guild_list = [
@@ -67,7 +95,7 @@ def get_guilds():
         
         return jsonify({'guilds': guild_list})
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
 @app.route('/api/download', methods=['POST'])
@@ -110,23 +138,43 @@ def run_bot_loop():
     bot_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(bot_loop)
     
-    bot = DiscordBot()
-    
-    # Start the bot as a task and run the loop forever
-    async def start():
-        try:
-            await bot.start()
-        except Exception as e:
-            print(f"Bot error: {e}")
-    
     try:
+        # Check if token is set before creating bot
+        token = os.getenv('DISCORD_BOT_TOKEN')
+        if not token:
+            print("ERROR: DISCORD_BOT_TOKEN not found in environment variables")
+            print("Please set DISCORD_BOT_TOKEN in Railway project variables")
+            sys.stderr.write("ERROR: DISCORD_BOT_TOKEN not found\n")
+            return
+        
+        print(f"Initializing Discord bot (token length: {len(token) if token else 0})...")
+        bot = DiscordBot()
+        print("Bot instance created successfully")
+        
+        # Start the bot as a task and run the loop forever
+        async def start():
+            try:
+                print("Attempting to connect to Discord...")
+                await bot.start()
+            except discord.LoginFailure:
+                print("ERROR: Failed to login to Discord. Check your bot token.")
+                sys.stderr.write("ERROR: Discord login failed - invalid token\n")
+            except Exception as e:
+                print(f"ERROR: Bot connection failed: {e}")
+                print(traceback.format_exc())
+                sys.stderr.write(f"ERROR: Bot error: {e}\n{traceback.format_exc()}\n")
+        
         # Create task and run loop forever (bot.start() keeps running)
-        bot_loop.create_task(start())
+        task = bot_loop.create_task(start())
+        print("Bot task created, starting event loop...")
         bot_loop.run_forever()
     except Exception as e:
-        print(f"Loop error: {e}")
+        print(f"ERROR: Loop error: {e}")
+        print(traceback.format_exc())
+        sys.stderr.write(f"ERROR: Loop error: {e}\n{traceback.format_exc()}\n")
     finally:
-        bot_loop.close()
+        if not bot_loop.is_closed():
+            bot_loop.close()
 
 
 def start_bot_background():
