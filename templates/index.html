@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mega Moji - Discord Emoji Downloader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎨 Mega Moji</h1>
+            <p class="subtitle">Download all emojis from any Discord server</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Loading servers...</p>
+                </div>
+
+                <div id="error" class="error hidden"></div>
+
+                <div id="server-selection" class="hidden">
+                    <label for="guild-select">Select a Discord Server:</label>
+                    <select id="guild-select" name="guild">
+                        <option value="">Choose a server...</option>
+                    </select>
+                    
+                    <div id="server-info" class="server-info hidden">
+                        <p>Emojis found: <span id="emoji-count">0</span></p>
+                    </div>
+
+                    <button id="download-btn" class="download-btn" disabled>
+                        <span class="btn-text">Download Emojis</span>
+                        <span class="btn-loader hidden">
+                            <span class="spinner small"></span>
+                            Downloading...
+                        </span>
+                    </button>
+                </div>
+
+                <div id="instructions" class="instructions">
+                    <h3>How to use:</h3>
+                    <ol>
+                        <li>Make sure the Discord bot is running and has joined your servers</li>
+                        <li>Select a server from the dropdown above</li>
+                        <li>Click "Download Emojis" to get a zip file with all emojis</li>
+                    </ol>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>Made with ❤️ for Discord emoji enthusiasts</p>
+        </footer>
+    </div>
+
+    <script>
+        let selectedGuildId = null;
+
+        // Load guilds on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadGuilds();
+        });
+
+        async function loadGuilds() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const serverSelection = document.getElementById('server-selection');
+            const guildSelect = document.getElementById('guild-select');
+
+            loading.classList.remove('hidden');
+            error.classList.add('hidden');
+            serverSelection.classList.add('hidden');
+
+            try {
+                // Wait for bot to be ready, with retries
+                let response;
+                let retries = 0;
+                while (retries < 10) {
+                    response = await fetch('/api/guilds');
+                    if (response.ok) {
+                        break;
+                    }
+                    if (response.status === 503) {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        retries++;
+                        continue;
+                    }
+                    throw new Error(`Failed to load guilds: ${response.statusText}`);
+                }
+
+                if (!response.ok) {
+                    throw new Error('Bot is not ready yet. Please wait a moment and refresh.');
+                }
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Populate dropdown
+                guildSelect.innerHTML = '<option value="">Choose a server...</option>';
+                
+                if (data.guilds && data.guilds.length > 0) {
+                    data.guilds.forEach(guild => {
+                        const option = document.createElement('option');
+                        option.value = guild.id;
+                        option.textContent = `${guild.name} (${guild.emoji_count} emojis)`;
+                        option.dataset.emojiCount = guild.emoji_count;
+                        guildSelect.appendChild(option);
+                    });
+
+                    serverSelection.classList.remove('hidden');
+                } else {
+                    throw new Error('No servers found. Make sure the bot has joined at least one server.');
+                }
+
+            } catch (err) {
+                error.textContent = err.message;
+                error.classList.remove('hidden');
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        // Handle guild selection
+        document.getElementById('guild-select').addEventListener('change', (e) => {
+            const selectedOption = e.target.options[e.target.selectedIndex];
+            selectedGuildId = e.target.value;
+            
+            const downloadBtn = document.getElementById('download-btn');
+            const serverInfo = document.getElementById('server-info');
+            const emojiCount = document.getElementById('emoji-count');
+
+            if (selectedGuildId) {
+                downloadBtn.disabled = false;
+                serverInfo.classList.remove('hidden');
+                emojiCount.textContent = selectedOption.dataset.emojiCount || '0';
+            } else {
+                downloadBtn.disabled = true;
+                serverInfo.classList.add('hidden');
+            }
+        });
+
+        // Handle download
+        document.getElementById('download-btn').addEventListener('click', async () => {
+            if (!selectedGuildId) return;
+
+            const downloadBtn = document.getElementById('download-btn');
+            const btnText = downloadBtn.querySelector('.btn-text');
+            const btnLoader = downloadBtn.querySelector('.btn-loader');
+            const error = document.getElementById('error');
+
+            // Show loading state
+            downloadBtn.disabled = true;
+            btnText.classList.add('hidden');
+            btnLoader.classList.remove('hidden');
+            error.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ guild_id: selectedGuildId })
+                });
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to download emojis');
+                }
+
+                // Get filename from Content-Disposition header or use default
+                const contentDisposition = response.headers.get('Content-Disposition');
+                let filename = 'emojis.zip';
+                if (contentDisposition) {
+                    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
+                }
+
+                // Download the file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+            } catch (err) {
+                error.textContent = err.message;
+                error.classList.remove('hidden');
+            } finally {
+                // Reset button state
+                downloadBtn.disabled = false;
+                btnText.classList.remove('hidden');
+                btnLoader.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
+
